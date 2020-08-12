@@ -15,6 +15,19 @@ class SensorDefinitionError(Exception):
         self.message = message
 
 
+class GlobalImport:
+
+    def __enter__(self):
+        return self
+
+    def __call__(self):
+        import inspect
+        self.collector = inspect.getargvalues(inspect.getouterframes(inspect.currentframe())[1].frame).locals
+
+    def __exit__(self, *args):
+        globals().update(self.collector)
+
+
 class InfluxDB(object):
     """
     InfluxDB database object.
@@ -39,9 +52,9 @@ class InfluxDB(object):
         url = parser.get("influxdb", "url")
         port = parser.get("influxdb", "port")
         user = parser.get("influxdb", "username")
-        pwd = parser.get("influxdb", "pwd")
+        pwd = parser.get("influxdb", "password")
         db = parser.get("influxdb", "database")
-        self.client = InfluxDBClient(influx_url, influx_port, influx_user, influx_pwd, influx_db)
+        self.client = InfluxDBClient(url, port, user, pwd, db)
         if missed_dir:
             try:
                 os.mkdir(missed_dir)
@@ -54,28 +67,29 @@ class InfluxDB(object):
         Try to write data to the database. Otherwise, save the data.
         """
         try:
-            self.client.write_points(data)
+            self.client.write_points(data[0])
         except Exception as err:
             if self.missed_dir:
-                path = os.path.join(missed_dir, "%d-missed.json" % time.time())
+                path = os.path.join(self.missed_dir, "%s-missed.json" % str(time.time()).remove("."))
                 print("Unable to upload data. Saving reading to %s." % path)
                 with open(path, "w") as outfile:
                     json.dump(data, outfile)
 
-    def loop(sensors, time=0):
+    def loop(self, sensors, loop_time=0, delay=0.1):
         """
         Start a data collection loop.
 
         Args:
-            influxdb: InfluxDB object.
             sensors (list): List of sensor objects.
-            time (float): Amount of time in seconds to run the loop for.
+            loop_time (float): Amount of time in seconds to run the loop for.
                 If no time is set, the loop runs forever.
+            delay (float): Amount of time in seconds to delay per iteration.
         """
         start_time = time.time()
-        while time != 0 and time.time() - start_time < time or time == 0:
+        while loop_time != 0 and time.time() - start_time < loop_time or loop_time == 0:
             data = [sensor.make_JSON() for sensor in sensors if sensor.on]
-            self.write(data)
+            self.write([data])
+            time.sleep(delay)
 
 
 def doc_inherit(cls):
@@ -85,7 +99,7 @@ def doc_inherit(cls):
                 func.__doc__ += "Inherited from %s.%s:\n" % (cls.__name__, func.__name__)
             else:
                 func.__doc__ = "Inherited from %s.%s:\n" % (cls.__name__, func.__name__)
-            func.__doc__ += cls.func.__doc__
+            func.__doc__ += getattr(cls, func.__name__).__doc__
         elif type(func) == type:
             if func.__doc__:
                 func.__doc__ += "Inherited from %s:\n" % cls.__name__
@@ -126,8 +140,8 @@ class Sensor(object):
         Args:
             measurements (list): A list of measurement values.
         """
-        measurements_string = ["%s: %.3g%s" % (measurement, value, unit) for value, (measurement, unit) in zip(measurements, self.measurements.items())]
-        print("On %s read %s." % (self.name, " ".join(measurements_string)))
+        measurements_string = ["%s: %.3g %s" % (measurement, value, unit) for value, (measurement, unit) in zip(measurements, self.measurements.items())]
+        print("On %s read %s." % (self.name, ", ".join(measurements_string)))
 
     def read(self):
         """
@@ -185,9 +199,11 @@ class Arduino_Sensor(Sensor):
         board_port (int): Arduino board port.
         baud (int): Baud rate. Defaults to 9600.
     """
-    def __init__(self, name, board_port, baud=9600):
-        import serial
-        super().__init__(name)
+    def __init__(self, name, board_port, baud=9600, **kwargs):
+        with GlobalImport() as gi:
+            import serial
+            gi()
+        super().__init__(name, **kwargs)
         self.board_port = board_port
         self.baud = baud
 
@@ -223,8 +239,8 @@ class Pi_Sensor(Sensor):
     Attrs:
         pin (int): GPIO pin on the Raspberry-Pi.
     """
-    def __init__(self, name, pin):
-        super().__init__(name)
+    def __init__(self, name, pin, **kwargs):
+        super().__init__(name, **kwargs)
         self.pin = pin
 
 
@@ -233,9 +249,11 @@ class Test_Sensor(Sensor):
     """
     Sensor class for testing and debugging purposes.
     """
-    def __init__(self):
-        import random
-        super().__init__("test")
+    def __init__(self, name, **kwargs):
+        with GlobalImport() as gi:
+            import random
+            gi()
+        super().__init__(name, **kwargs)
         self.measurements = {"test1": "units", "test2": "units"}
 
     @doc_inherit(Sensor)
@@ -246,10 +264,12 @@ class Test_Sensor(Sensor):
 @doc_inherit(Pi_Sensor)
 class Temp_Humid_Sensor(Pi_Sensor):
     """DHT22 temperature-huditity sensor class."""
-    def __init__(self, name, pin):
-        import Adafruit_DHT
-        from math import log
-        super().__init__(name, pin=pin)
+    def __init__(self, name, pin, **kwargs):
+        #import Adafruit_DHT
+        with GlobalImport() as gi:
+            from math import log
+            gi()
+        super().__init__(name, pin=pin, **kwargs)
         self.measurements = {"temperature": "C", "humidity": "%%", "dew point": "C"}
 
     def dewPt(self, temp, humid):
@@ -272,40 +292,42 @@ class Temp_Humid_Sensor(Pi_Sensor):
         sensor = Adafruit_DHT.DHT22
         temp, humid = Adafruit_DHT.read_retry(sensor, self.pin)
         dewpoint = self.dewPt(temp, humid)
-        return [temperature, humidity, dewPt]
+        return [temp, humid, dewpoint]
 
 
 @doc_inherit(Arduino_Sensor)
 class Magnetometer(Arduino_Sensor):
     """QMC5883L Magnetometer sensor class."""
-    def __init__(self, name, board_port, baud=9600):
-        super().__init__(name, board_port, baud=baud)
+    def __init__(self, name, board_port, **kwargs):
+        super().__init__(name, board_port, **kwargs)
         self.measurements = {"Bx": "G", "By": "G", "Bz": "G"}
 
 
 @doc_inherit(Arduino_Sensor)
 class Gyroscope(Arduino_Sensor):
     """L3GD20H Magnetometer sensor class."""
-    def __init__(self, name, board_port, baud=9600):
-        super().__init__(name, board_port, baud=baud)
+    def __init__(self, name, board_port, **kwargs):
+        super().__init__(name, board_port, **kwargs)
         self.measurements = {"xrot": "rad/s", "yrot": "rad/s", "zrot": "rad/s"}
 
 
 @doc_inherit(Arduino_Sensor)
 class Accelerometer(Arduino_Sensor):
     """ADXL335 accelerometer sensor class."""
-    def __init__(self, name, board_port, baud=9600):
-        super().__init__(name, board_port, baud=baud)
+    def __init__(self, name, board_port, **kwargs):
+        super().__init__(name, board_port, **kwargs)
         self.measurements = {"xAccel": "m/s^2", "yAccel": "m/s^2", "zAccel": "m/s^2"}
 
 
 @doc_inherit(Sensor)
 class LaserPower(Sensor):
     """Laser power sensor class."""
-    def __init__(self, name):
-        import visa
-        from ThorlabsPM100 import ThorlabsPM100
-        super().__init__(name)
+    def __init__(self, name, **kwargs):
+        with GlobalImport() as gi:
+            import visa
+            from ThorlabsPM100 import ThorlabsPM100
+            gi()
+        super().__init__(name, **kwargs)
         self.measurements = {"power": "W"}
 
     @doc_inherit(Sensor)
@@ -326,18 +348,20 @@ class Thermocouple(Sensor):
         use_device_detection (bool): Use device detection. Defaults to True.
         delay (float): Time delay per data reading in seconds. Defaults to 1 second.
     """
-    def __init__(self, name, use_device_detection=True, delay=1):
-        from mcculw import ul
-        from mcculw.enums import TempScale, InfoType, GlobalInfo, BoardInfo, DigitalInfo, ExpansionInfo, TcType, AiChanType
-        from mcculw.ul import ULError
-        from ai import AnalogInputProps
-        import pyvisa
-        super().__init__(name)
+    def __init__(self, name, use_device_detection=True, delay=1, **kwargs):
+        with GlobalImport() as gi:
+            from mcculw import ul
+            from mcculw.enums import TempScale, InfoType, GlobalInfo, BoardInfo, DigitalInfo, ExpansionInfo, TcType, AiChanType
+            from mcculw.ul import ULError
+            from ai import AnalogInputProps
+            import pyvisa
+            gi()
+        super().__init__(name, **kwargs)
         self.measurements = {}
         self.use_device_detection = use_device_detection
         self.delay = delay
 
-    def get_temp(channel):
+    def get_temp(self, channel):
         """
         Get the temperature reading from a thermocouple.
 
@@ -365,10 +389,10 @@ class Thermocouple(Sensor):
                 ul.release_daq_device(board_num)
 
         @doc_inherit(Sensor)
-        def read():
+        def read(self):
             time.sleep(self.delay)
             return [self.get_temp(i) for i in range(8)]
 
         @doc_inherit(Sensor)
-        def filter(values):
+        def filter(self, values):
             return [value if value >= 0 and value <= 1000 else 0 for value in values]
