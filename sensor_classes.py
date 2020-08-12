@@ -1,172 +1,237 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-## import modules
-#import Adafruit_DHT
-import serial
-import random
-
 from math import *
 from influxdb import InfluxDBClient
 import datetime
 import sys
-
 import json
 import os
 import time
 import errno
 
-## define error classes
+
 class Error(Exception):
-    
+    """Base class for custom exceptions."""
     pass
 
-# config file error
+
 class ConfigError(Error):
-    
+    """Error in the configuration file."""
     def __init__(self, message):
 
         self.message = message
 
-# module error
-class ModuleError(Error):
-    
+
+class DeviceError(Error):
+    """Error in the device class definition."""
     def __init__(self, message):
 
         self.message = message
 
-# measurement error
-class MeasurementError(Error):
-    
-    def __init__(self, message):
 
-        self.message = message
+def doc_inherit(cls):
+    def decorator(func):
+        if func.__name__ in dir(cls):
+            if func.__doc__:
+                func.__doc__ += "Inherited from %s.%s:\n" % (cls.__name__, func.__name__)
+            else:
+                func.__doc__ = "Inherited from %s.%s:\n" % (cls.__name__, func.__name__)
+            func.__doc__ += cls.func.__doc__
+        elif type(func) == type:
+            if func.__doc__:
+                func.__doc__ += "Inherited from %s:\n" % cls.__name__
+            else:
+                func.__doc__ = "Inherited from %s:\n" % cls.__name__
+            func.__doc__ += cls.__doc__
+        return func
+    return decorator
 
-## define sensor classes
+
 class Sensor:
+    """
+    Base class for all sensors.
 
-    # initialize
+    Args:
+        name (str): A name to associate with the sensor.
+
+    Attrs:
+        name (str): A name to associate with the sensor.
+        libraries (list): A list of required python libraries.
+        measurements (dict): A dictionary of measurements and their associated units.
+    """
     def __init__(self, name):
 
         self.name = name
         self.libraries = []
-        self.measure_types = []
-        self.units = []
+        self.measurements = {}
 
-    # print measurements
     def print_measurements(self, measurements):
+        """
+        Print measurements in a human-readable string.
 
-        measurements_string = ["%.3g" % measurement for measurement in measurements]
-        measurements_units = [i + j for i, j in zip(measurements_string, self.units)] 
-        print("On sensor %s read %s" % (self.name, " ".join(measurements_units)))
+        Args:
+            measurements (list): A list of measurement values.
+        """
+        measurements_string = ["%s: %.3g%s" % (measurement, value, unit) for value, (measurement, unit) in zip(measurements, self.measurements.items())]
+        print("On %s read %s." % (self.name, " ".join(measurements_string)))
 
-    # read measurements (outputs list)
     def read(self):
+        """
+        Read measurements from sensor.
 
-        measurements = []
+        Returns:
+            List of measurement values.
+        """
+        values = []
+        return values
 
-        return measurements
+    def filter_measurements(self, values):
+        """
+        Filter measurements.
 
-    # filter measurements (inputs list, outputs list)
-    def filter_measurements(self, measurements):
+        Args:
+            measurements (list): List of measurement values.
 
-        return measurements
+        Returns:
+            List of filtered measurement values.
+        """
+        return values
 
-    # make JSON dictionary
-    def make_JSON(self, tags, print_m):
+    def make_JSON(self, tags=None, print_m=False):
+        """
+        Generate a JSON object to send to the InfluxDB database.
 
-        current_time = str(datetime.datetime.utcnow()) # get current time
-        measurements = self.read() # read measurements
+        Args:
+            tags (list): List of tags to add to the JSON object.
+            print_m (bool): Print the measurements as the JSON object is generated.
 
-        # verify that there are correct number of measurements
-        if len(measurements) != len(self.measure_types):
-            raise MeasurementError("Number of measurements on device %s does not match class definition" % self.name)
-
-        if print_m == True:
-            self.print_measurements(measurements)
-        
+        Returns:
+            JSON object to send to the InfluxDB database.
+        """
+        current_time = str(datetime.datetime.utcnow())
+        values = self.read()
+        if len(values) != len(self.measurements):
+            raise DeviceError("Number of measurements returned from read function on device %s (%d) does not match class definition (%d)" % (len(values), self.name, len(self.measurements)))
+        if print_m:
+            self.print_measurements(values)
         fields = {}
-        measurements_filtered = self.filter_measurements(measurements)
-        for i in range(len(self.measure_types)):
-            fields[self.measure_types[i]] = measurements_filtered[i]
-
+        filtered = self.filter_measurements(values)
+        for measurement, value in zip(self.measurements.keys(), filtered):
+            fields[measurement] = value
         data = {"measurement": self.name, "time": current_time, "tags": tags, "fields": fields}
-
         return data
 
-    # check that all required modules are imported
     def check_libraries(self):
-
+        """Import any required libraries."""
         for library in self.libraries:
             if library not in sys.modules:
-                raise ModuleError("You have not imported the {} module".format(library))
+                exec("import %s" % library)
 
-# subclass for Arduino sensors
+
+@doc_inherit(Sensor)
 class Arduino_Sensor(Sensor):
+    """
+    Subclass for Arduino-based sensors.
 
+    Args:
+        **kwargs: Attributes from config file.
+
+    Attrs:
+        board_port (int): Arduino board port.
+        baud (int): Baud rate. Defaults to 9600.
+    """
     def __init__(self, name, **kwargs):
-
         super().__init__(name)
         self.libraries.append("serial")
         self.check_libraries()
         self.board_port = kwargs.pop("board_port", None)
-        if self.board_port == None:
+        if self.board_port is None:
             raise ConfigError("Board port not defined for Arduino sensor %s" % self.name)
         self.baud = int(kwargs.pop("baud", 9600))
 
-    # expects data over serial as numbers seperated by commas (e.g. 1.15,2.42,5.2)
+    @doc_inherit(Sensor)
     def read(self):
+        """
+        Expects serial input to be measurement value seperated by commas.
 
+        You can use this Arduino code to package your data properly.
+        >>> void printall(double values[]) {
+        ...     int num = sizeof(array) / sizeof(array[0]);
+        ...       for (int i = 0; i <= (num - 1); i++) {
+        ...           Serial.print(values[i]);
+        ...           Serial.print(",");
+        ...       }
+        ...       Serial.println("");
+        ...   }
+        """
         ser = serial.Serial(self.board_port, self.baud, timeout=1)
+        values_raw = ser.readline()
+        values = values_raw.decode().split(",")[:-1]
+        return values
 
-        measurements_raw = ser.readline()
-        measurements = measurements_raw.decode().split(",")[:-1]
 
-        return measurements
-
-# subclass for Raspberry Pi sensors
+@doc_inherit(Sensor)
 class Pi_Sensor(Sensor):
+    """
+    Subclass for Raspberry-Pi based sensors.
 
+    Args:
+        **kwargs: Attributes from config file.
+
+    Attrs:
+        pin (int): GPIO pin on the Raspberry-Pi.
+    """
     def __init__(self, name, **kwargs):
-
         super().__init__(name)
         self.pin = int(kwargs.pop("pin", None))
-        if self.pin == None:
+        if self.pin is None:
             raise ConfigError("Pin not defined for Pi sensor %s" % self.name)
 
-# example test sensor
+
+@doc_inherit(Sensor)
 class Test_Sensor(Sensor):
-
+    """
+    Sensor class for testing and debugging purposes.
+    """
     def __init__(self, name):
-
         super().__init__(name)
         self.libraries.append("random")
         self.check_libraries()
         self.measure_types = ["test1", "test2"]
         self.units = ["units", "units"]
 
+    @doc_inherit(Sensor)
     def read(self):
-
         return [random.random(), random.random()]
 
-# DHT22
+
+@doc_inherit(Pi_Sensor)
 class Temp_Humid_Sensor(Pi_Sensor):
-
+    """DHT22 temperature-huditity sensor class."""
     def __init__(self, name, **kwargs):
-
         self.pin = int(kwargs.pop("pin", None))
         super().__init__(name, pin = self.pin)
         self.libraries.append("Adafruit_DHT")
         self.measure_types = ["temperature", "humidity", "dew point"]
         self.units = ["C", "%%", "C"]
 
-    # dew point calculation
     def dewPt(self, temp, humid):
+        """
+        Calculate dew point.
 
+        Args:
+            temp (float): Temperature.
+            humid (float): Humidity.
+
+        Returns:
+            Dew point.
+        """
         gamma = log(humid / 100.0) + 17.67 * temp / (243.5 + temp)
         dp = 243.5 * gamma / (17.67 - gamma)
         return dp
 
+    @doc_inherit(Pi_Sensor)
     def read(self):
 
         sensor = Adafruit_DHT.DHT22
@@ -174,38 +239,38 @@ class Temp_Humid_Sensor(Pi_Sensor):
         dewpoint = self.dewPt(temp, humid)
         return [temperature, humidity, dewPt]
 
-# QMC5883L
+
+@doc_inherit(Arduino_Sensor)
 class Magnetometer(Arduino_Sensor):
+    """QMC5883L Magnetometer sensor class."""
+    def __init__(self, name, **kwargs):
+        self.board_port = kwargs.pop("board_port", None)
+        self.baud = int(kwargs.pop("baud", 9600))
+        super().__init__(name, board_port = self.board_port, baud = self.baud)
+        self.measure_types = ["Bx", "By", "Bz"]
+        self.units = ["G", "G", "G"]
 
-	def __init__(self, name, **kwargs):
 
-		self.board_port = kwargs.pop("board_port", None)
-		self.baud = int(kwargs.pop("baud", 9600))
-		super().__init__(name, board_port = self.board_port, baud = self.baud)
-		self.measure_types = ["Bx", "By", "Bz"]
-		self.units = ["G", "G", "G"]
-
-# L3GD20H
+@doc_inherit(Arduino_Sensor)
 class Gyroscope(Arduino_Sensor):
+    """L3GD20H Magnetometer sensor class."""
+    def __init__(self, name, **kwargs):
+        self.board_port = kwargs.pop("board_port", None)
+        self.baud = int(kwargs.pop("baud", 9600))
+        super().__init__(name, board_port = self.board_port, baud = self.baud)
+        self.measure_types = ["xrot", "yrot", "zrot"]
+        self.units = ["rad/s", "rad/s", "rad/s"]
 
-	def __init__(self, name, **kwargs):
 
-		self.board_port = kwargs.pop("board_port", None)
-		self.baud = int(kwargs.pop("baud", 9600))
-		super().__init__(name, board_port = self.board_port, baud = self.baud)
-		self.measure_types = ["xrot", "yrot", "zrot"]
-		self.units = ["rad/s", "rad/s", "rad/s"]
-
-# ADXL335
+@doc_inherit(Arduino_Sensor)
 class Accelerometer(Arduino_Sensor):
+    """ADXL335 accelerometer sensor class."""
+    def __init__(self, name, **kwargs):
+        self.board_port = kwargs.pop("board_port", None)
+        self.baud = int(kwargs.pop("baud", 9600))
+        super().__init__(name, board_port = self.board_port, baud = self.baud)
+        self.measure_types = ["xAccel", "yAccel", "zAccel"]
+        self.units = ["m/s^2", "m/s^2", "m/s^2"]
 
-	def __init__(self, name, **kwargs):
-
-		self.board_port = kwargs.pop("board_port", None)
-		self.baud = int(kwargs.pop("baud", 9600))
-		super().__init__(name, board_port = self.board_port, baud = self.baud)
-		self.measure_types = ["xAccel", "yAccel", "zAccel"]
-		self.units = ["m/s^2", "m/s^2", "m/s^2"]
-
-## dictionary of sensor types
+# dictionary of sensor types
 sensor_types = {"test": Test_Sensor, "temp_humid": Temp_Humid_Sensor, "magnetometer": Magnetometer, "gyroscope": Gyroscope, "accelerometer": Accelerometer}
