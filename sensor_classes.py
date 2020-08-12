@@ -16,7 +16,9 @@ class SensorDefinitionError(Exception):
 
 
 class GlobalImport:
-
+    """
+    Context manager for global module imports.
+    """
     def __enter__(self):
         return self
 
@@ -70,8 +72,8 @@ class InfluxDB(object):
             self.client.write_points(data[0])
         except Exception as err:
             if self.missed_dir:
-                path = os.path.join(self.missed_dir, "%s-missed.json" % str(time.time()).remove("."))
-                print("Unable to upload data. Saving reading to %s." % path)
+                path = os.path.join(self.missed_dir, "%s-missed.json" % str(time.time()).replace(".", ""))
+                print("Error uploading to database:\n%s\nSaving reading to %s." % (err, path))
                 with open(path, "w") as outfile:
                     json.dump(data, outfile)
 
@@ -87,13 +89,33 @@ class InfluxDB(object):
         """
         start_time = time.time()
         while loop_time != 0 and time.time() - start_time < loop_time or loop_time == 0:
-            data = [sensor.make_JSON() for sensor in sensors if sensor.on]
+            data = [sensor.make_JSON() for sensor in sensors if sensor.on and not sensor.garbage]
             self.write([data])
             time.sleep(delay)
 
 
 def doc_inherit(cls):
+    """
+    Wrapper for a decorator which allows classes and functions to inherit docstrings from another class.
+
+    Args:
+        cls: Class to inherit docstring from.
+
+    Returns:
+        Decorator which allows classes and functions to inherit docstrings from another class.
+    """
     def decorator(func):
+        """
+        Decorator which allows classes and functions to inherit docstrings from another class.
+
+        Args:
+            func: Function or class which will inherit the docstring.
+                If function, then it will inherit the docstring from the method of the same name in the class if it exists.
+                If class, then it will inherit the docstring from the class.
+
+        Returns:
+            The function or class with an updated docstring.
+        """
         if func.__name__ in dir(cls):
             if func.__doc__:
                 func.__doc__ += "Inherited from %s.%s:\n" % (cls.__name__, func.__name__)
@@ -125,6 +147,7 @@ class Sensor(object):
         print_m (bool): Print the measurements as the JSON object is generated.
         measurements (dict): A dictionary of measurements and their associated units.
         on (bool): Read data from the sensor.
+        garbage (bool): Data is garbage. Set to True in filter method to skip data point.
     """
     def __init__(self, name, print_m=False, tags=[], on=True):
         self.name = name
@@ -132,6 +155,7 @@ class Sensor(object):
         self.tags = tags
         self.measurements = {}
         self.on = on
+        self.garbage = False
 
     def print_measurements(self, measurements):
         """
@@ -153,9 +177,11 @@ class Sensor(object):
         values = []
         return values
 
-    def filter_measurements(self, values):
+    def filter(self, values):
         """
-        Filter measurements.
+        Filter measurement values.
+
+        Set self.garbage to True in the filter method to skip the current datapoint.
 
         Args:
             measurements (list): List of measurement values.
@@ -173,13 +199,16 @@ class Sensor(object):
             JSON object to send to the InfluxDB database.
         """
         current_time = str(datetime.datetime.utcnow())
+        self.garbage = False
         values = self.read()
         if len(values) != len(self.measurements):
             raise SensorDefinitionError("Number of measurements returned from read function on device %s (%d) does not match class definition (%d)" % (len(values), self.name, len(self.measurements)))
         if self.print_m:
             self.print_measurements(values)
         fields = {}
-        filtered = self.filter_measurements(values)
+        filtered = self.filter(values)
+        if not filtered:
+            return False
         for measurement, value in zip(self.measurements.keys(), filtered):
             fields[measurement] = value
         data = {"measurement": self.name, "time": current_time, "tags": self.tags, "fields": fields}
@@ -388,11 +417,27 @@ class Thermocouple(Sensor):
             if self.use_device_detection:
                 ul.release_daq_device(board_num)
 
-        @doc_inherit(Sensor)
-        def read(self):
-            time.sleep(self.delay)
-            return [self.get_temp(i) for i in range(8)]
+    @doc_inherit(Sensor)
+    def read(self):
+        time.sleep(self.delay)
+        return [self.get_temp(i) for i in range(8)]
 
-        @doc_inherit(Sensor)
-        def filter(self, values):
-            return [value if value >= 0 and value <= 1000 else 0 for value in values]
+    @doc_inherit(Sensor)
+    def filter(self, values):
+        if True in (value < 0 or value > 1000 for value in values):
+            self.garbage = True
+        return values
+
+
+@doc_inherit(Arduino_Sensor)
+class MOTBox(Arduino_Sensor):
+    """MOT box sensor class."""
+    def __init__(self, name, board_port, **kwargs):
+        super().__init__(name, board_port, **kwargs)
+        self.measurements = {"IntTemp1": "C", "IntTemp2": "C", "ThermoTemp1": "C", "ThermoTemp2": "C", "Flow": "V"}
+
+    @doc_inherit(Arduino_Sensor)
+    def filter(self, values):
+        if True in (value <= 0 or value > 500 for value in values):
+            self.garbage = True
+        return values
