@@ -326,10 +326,10 @@ class Temp_Humid_Sensor(Pi_Sensor):
 
 @doc_inherit(Arduino_Sensor)
 class Magnetometer(Arduino_Sensor):
-    """QMC5883L Magnetometer sensor class."""
+    """MLX90393 Magnetometer sensor class."""
     def __init__(self, name, board_port, **kwargs):
         super().__init__(name, board_port, **kwargs)
-        self.measurements = {"Bx": "G", "By": "G", "Bz": "G"}
+        self.measurements = {"Bx": "uG", "By": "uG", "Bz": "uG"}
 
 
 @doc_inherit(Arduino_Sensor)
@@ -342,7 +342,7 @@ class Gyroscope(Arduino_Sensor):
 
 @doc_inherit(Arduino_Sensor)
 class Accelerometer(Arduino_Sensor):
-    """ADXL335 accelerometer sensor class."""
+    """ADXL345 accelerometer sensor class."""
     def __init__(self, name, board_port, **kwargs):
         super().__init__(name, board_port, **kwargs)
         self.measurements = {"xAccel": "m/s^2", "yAccel": "m/s^2", "zAccel": "m/s^2"}
