@@ -65,3 +65,4 @@ You must define a `read` method which sets `self.values` to a list of measuremen
         def filter(self)
             return [x > 0 for x in self.values]
 
+Raspberry Pi-based sensors include an additional argument `pin` for the GPIO pin on the Raspberry-Pi. Arduino-based sensors include an additional argument `board_port` and an additional keyword argument `baud` for the Arduino board port and baud rate respectively. The read function is predefined for Arduino-based sensors. The function assumes that the measurements are communicated over serial and seperated by commas.
