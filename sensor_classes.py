@@ -289,13 +289,14 @@ class Logger(object):
             self.client = InfluxDBClient(url, port, username, pwd, db_name)
             self.backup_dir = backup_dir
         except Exception as err:
+            print("Failed to connect to database.")
             print(err)
 
     def upload(self):
         try:
             self.client.write_points(self.data)
-            print(self.data)
         except Exception as err:
+            print("Failed to upload data. Saving data to backup directory.")
             print(err)
             os.makedirs(self.backup_dir, exist_ok=True)
             file_name = "{}-missed.json".format(time.time())

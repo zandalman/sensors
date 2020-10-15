@@ -23,9 +23,9 @@ def parse_config():
 if __name__ == "__main__":
     logger = Logger("example")
     logger.connect(backup_dir="/Users/zacharyandalman/Documents/Sr Lab/logs", **parse_config())
-    sensors = [Test_Sensor("test", print_m=True), Magnetometer("test", board_port="something")]
+    sensors = [Test_Sensor("test", print_m=True)]
     logger.add_sensors(sensors)
-    for i in range(100):
+    while True:
         logger.generate_body()
         logger.upload()
         time.sleep(1)
