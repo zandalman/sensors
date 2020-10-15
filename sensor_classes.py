@@ -9,16 +9,8 @@ import time
 import numpy as np
 
 
-class SensorDefinitionError(Exception):
-    """Error in the device class definition."""
-    def __init__(self, message):
-        self.message = message
-
-
 class GlobalImport:
-    """
-    Context manager for global module imports.
-    """
+    """Context manager for global imports."""
     def __enter__(self):
         return self
 
@@ -36,16 +28,15 @@ class Sensor(object):
 
     Args:
         name (str): A name to associate with the sensor.
-        tags (list): List of tags to add to the JSON object.
-        print_m (bool): Print the measurements as the JSON object is generated.
+        print_m (bool): Print the measurements.
 
     Attrs:
         name (str): A name to associate with the sensor.
-        tags (list): List of tags to add to the JSON object.
-        print_m (bool): Print the measurements as the JSON object is generated.
-        measurements (dict): A dictionary of measurements and their associated units.
-        on (bool): Read data from the sensor.
-        garbage (bool): Data is garbage. Set to True in filter method to skip data point.
+        channels (list): A list of sensor channels.
+        filter (function): A function which takes a list of measurements and returns a mask in the form of a list.
+        units (list): A list of measurement units for each channel.
+        values (list): A list of values for each measurement.
+        print_m (bool): Print the measurements.
     """
     def __init__(self, name, print_m=False):
         self.name = name
@@ -56,15 +47,10 @@ class Sensor(object):
         self.print_m = print_m
 
     def print_measurements(self):
-        """
-        Print measurements in a human-readable string.
-
-        Args:
-            measurements (list): A list of measurement values.
-        """
+        """Print measurements in a human-readable string."""
         if self.print_m:
-            measurements_str = ["%s: %.3g %s" % (channel, value, unit) for channel, value, unit in zip(self.channels, self.values, self.units)]
-            print("On %s read %s." % (self.name, ", ".join(measurements_str)))
+            measurements_str = ["'%s': %.3g %s" % (channel, value, unit) for channel, value, unit in zip(self.channels, self.values, self.units)]
+            print("On sensor '%s' read: %s." % (self.name, ", ".join(measurements_str)))
 
 
 class Arduino_Sensor(Sensor):
@@ -112,9 +98,7 @@ class Pi_Sensor(Sensor):
 
 
 class Test_Sensor(Sensor):
-    """
-    Class for testing and debugging sensor code. Inherits from Sensor class.
-    """
+    """Class for testing and debugging sensor code. Inherits from Sensor class."""
     def __init__(self, name, **kwargs):
         with GlobalImport() as gi:
             import random
@@ -271,6 +255,19 @@ class MOTBox(Arduino_Sensor):
 
 
 class Logger(object):
+    """
+    Data logger object.
+
+    Args:
+        name (str): A name to associate with the logger.
+
+    Attributes:
+        name (str): A name to associate with the logger.
+        sensors (list): List of sensor objects.
+        data (list): List of data point dictionaries.
+        client: Database client.
+        backup_dir (str): Directory for saving backup files. Defaults to "./backups".
+    """
     def __init__(self, name):
         self.name = name
         self.sensors = []
@@ -278,13 +275,28 @@ class Logger(object):
         self.client = None
         self.backup_dir = None
 
-    def add_sensor(self, sensor_object):
-        self.sensors.append(sensor_object)
-
     def add_sensors(self, *args):
+        """
+        Add sensors to the logger object.
+
+        Args:
+            *args: Sensor objects.
+        """
         self.sensors.extend(*args)
 
     def connect(self, url, port, username, pwd, db_name, backup_dir=os.path.join(os.getcwd(), "backups")):
+        """
+        Connect to the client.
+        It is recommended that you use a config file for sensitive information.
+
+        Args:
+            url (str): Database url.
+            port (int): Database port number.
+            username (str): Database username.
+            pwd (str): Database password.
+            db_name (str): Database name.
+            backup_dir (str): Directory for saving backup files. Defaults to "./backups".
+        """
         try:
             self.client = InfluxDBClient(url, port, username, pwd, db_name)
             self.backup_dir = backup_dir
@@ -293,6 +305,7 @@ class Logger(object):
             print(err)
 
     def upload(self):
+        """Upload the data to the client. If the upload fails, write the data to a backup file."""
         try:
             self.client.write_points(self.data)
         except Exception as err:
@@ -306,6 +319,7 @@ class Logger(object):
         self.data = []
 
     def generate_body(self):
+        """Read data from the sensors and generate a data point dictionary."""
         current_time = str(datetime.datetime.utcnow())
         data_body = dict(measurement="{}".format(self.name), time=current_time, fields={})
         for sensor in self.sensors:
@@ -320,6 +334,7 @@ class Logger(object):
         return data_body
 
     def upload_backups(self):
+        """Upload data from backup files."""
         try:
             for file in os.listdir(self.backup_dir):
                 if file.endswith('-missed.json'):
