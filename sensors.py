@@ -1,14 +1,31 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+from configparser import ConfigParser
+import time
 from sensor_classes import *
 
+
+def parse_config():
+    config = ConfigParser()
+    config.read('config.config')
+    influxdb = config['influxdb']
+    influxdb_params = {
+        "url": influxdb["url"],
+        "port": influxdb["port"],
+        "username": influxdb["username"],
+        "pwd": influxdb["password"],
+        "db_name": influxdb["database"]
+    }
+    return influxdb_params
+
+
 if __name__ == "__main__":
-    db = InfluxDB("config.config", missed_dir="/Users/zacharyandalman/Documents/Sr Lab/logs")
-    sensors = [
-        Temp_Humid_Sensor("th1", pin=1, on=False),
-        Temp_Humid_Sensor("th2", pin=7, on=False),
-        Temp_Humid_Sensor("th3", pin=8, on=False),
-        Test_Sensor("test", print_m="True")
-    ]
-    db.loop(sensors, loop_time=0, delay=0.1)
+    logger = Logger("example")
+    logger.connect(backup_dir="/Users/zacharyandalman/Documents/Sr Lab/logs", **parse_config())
+    sensors = [Test_Sensor("test", print_m=True), Magnetometer("test", board_port="something")]
+    logger.add_sensors(sensors)
+    for i in range(100):
+        logger.generate_body()
+        logger.upload()
+        time.sleep(1)
