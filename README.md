@@ -1,6 +1,6 @@
 # Sensors
 
-A unified sensor code for uploading data from sensors to InfluxDB.
+A unified sensor code for uploading sensor data from a Raspberry Pi to InfluxDB.
 
 ## Create a config file
 
@@ -35,4 +35,33 @@ To recover backup data, call `Logger.upload_backups`.
 
 ## Defining a new sensor class
 
-Will add information soon.
+If you want to use this code with a sensor which does not appear in `sensor_classes.py`, you will need to create a new sensor class. In `sensor_classes.py`, create a new sensor class. If the sensor is an Arudino-based sensor, inherit from the class `Arduino_Sensor`. If the sensor is a Raspberry-Pi based sensor, inherit from the class `Pi_Sensor`. If the sensor does not fall into one of these categories, inherit from the class `Sensor`.
+
+The initialization function in the new class should look like this.
+
+    def __init__(self, name, **kwargs):
+        with GlobalImport() as gi:
+            # import libraries required for sensor here
+            gi()
+        super().__init__(name, **kwargs)
+        self.channels = [] # fill list with sensor channels
+        self.units = [] # fill list with units for each sensor channel
+        
+You must define a `read` method which sets `self.values` to a list of measurement values for each channel. Optionally, you can define a filter function which returns a mask in the form of a list. Here is an example sensor class definition.
+
+    class Example_Sensor(Sensor):
+        """Class for testing and debugging sensor code. Inherits from Sensor class."""
+        def __init__(self, name, **kwargs):
+            with GlobalImport() as gi:
+                import random
+                gi()
+            super().__init__(name, **kwargs)
+            self.channels = ["measurement1", "measurement2"]
+            self.units = ["units", "units"]
+
+        def read(self):
+            self.values = [random.random(), random.random()]
+            
+        def filter(self)
+            return [x > 0 for x in self.values]
+
