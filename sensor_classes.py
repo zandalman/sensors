@@ -28,18 +28,21 @@ class Sensor(object):
 
     Args:
         name (str): A name to associate with the sensor.
+        timeout (float): Timeout in milliseconds.
         print_m (bool): Print the measurements.
 
     Attrs:
         name (str): A name to associate with the sensor.
+        timeout (float): Timeout in milliseconds.
         channels (list): A list of sensor channels.
         filter (function): A function which takes a list of measurements and returns a mask in the form of a list.
         units (list): A list of measurement units for each channel.
         values (list): A list of values for each measurement.
         print_m (bool): Print the measurements.
     """
-    def __init__(self, name, print_m=False):
+    def __init__(self, name, timeout=100, print_m=False):
         self.name = name
+        self.timeout = timeout
         self.channels = []
         self.filter = None
         self.units = []
@@ -77,9 +80,15 @@ class Arduino_Sensor(Sensor):
         """
         Expects serial input to be measurement values seperated by commas.
         """
-        ser = serial.Serial(self.board_port, self.baud, timeout=1)
-        values_raw = ser.readline()
-        self.values = values_raw.decode().split(",")[:-1]
+        try:
+            ser = serial.Serial(self.board_port, self.baud, timeout=1)
+            values_raw = ser.readline()
+            self.values = values_raw.decode().split(",")[:-1]
+            ser.close()
+        except Exception as err:
+            print(err)
+            ser.close()
+
 
 
 class Pi_Sensor(Sensor):
@@ -284,6 +293,15 @@ class Logger(object):
         """
         self.sensors.extend(*args)
 
+    def remove_sensor(self, sensor_object):
+        """
+        Remove a sensor from the logger object.
+
+        Args:
+            sensor_object: Sensor object.
+        """
+        self.sensors = [sensor for sensor in self.sensors if sensor != sensor_object]
+
     def connect(self, url, port, username, pwd, db_name, backup_dir=os.path.join(os.getcwd(), "backups")):
         """
         Connect to the client.
@@ -322,6 +340,7 @@ class Logger(object):
         """Read data from the sensors and generate a data point dictionary."""
         current_time = str(datetime.datetime.utcnow())
         data_body = dict(measurement="{}".format(self.name), time=current_time, fields={})
+        max_timeout = np.max([sensor.timeout for sensor in self.sensors]) / 1000.
         for sensor in self.sensors:
             sensor.read()
             mask = sensor.filter(sensor.values) if sensor.filter else [True] * len(sensor.channels)
