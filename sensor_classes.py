@@ -71,6 +71,11 @@ class Sensor(object):
             measurements_str = ["'%s': %.3g %s" % (channel, value, unit) for channel, value, unit in zip(self.channels, self.values, self.units)]
             print("On sensor '%s' read: %s." % (self.name, ", ".join(measurements_str)))
 
+    def print_error(self, e):
+        """Print error."""
+        if self.print_m:
+            error_class = e.__class__.__name__
+            print("On sensor '%s' read: %s: '%s.'" % (self.name, error_class, e))
 
 class Arduino_Sensor(Sensor):
     """
@@ -367,14 +372,17 @@ class Logger(object):
         current_time = str(datetime.datetime.utcnow())
         data_body = dict(measurement="{}".format(self.name), time=current_time, fields={})
         for sensor in self.sensors:
-            sensor.read()
-            mask = sensor.filter(sensor.values) if sensor.filter else [True] * len(sensor.channels)
-            for filter_pass, channel, value in zip(mask, sensor.channels, sensor.values):
-                if filter_pass:
-                    channel_name = "{} {}".format(sensor.name, channel)
-                    data_body["fields"][channel_name] = value
-            sensor.print_measurements()
-        self.data.append(data_body)
+            try:
+                sensor.read()
+                mask = sensor.filter(sensor.values) if sensor.filter else [True] * len(sensor.channels)
+                for filter_pass, channel, value in zip(mask, sensor.channels, sensor.values):
+                    if filter_pass:
+                        channel_name = "{} {}".format(sensor.name, channel)
+                        data_body["fields"][channel_name] = value
+                sensor.print_measurements()
+                self.data.append(data_body)
+            except Exception as e:
+                sensor.print_error(e)
         return data_body
 
     def upload_backups(self):
