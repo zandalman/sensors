@@ -7,6 +7,22 @@ import json
 import os
 import time
 import numpy as np
+import multiprocessing
+from configparser import ConfigParser
+
+
+def parse_config(config_path):
+    config = ConfigParser()
+    config.read(config_path)
+    influxdb = config["influxdb"]
+    influxdb_params = {
+        "url": influxdb["url"],
+        "port": influxdb["port"],
+        "username": influxdb["username"],
+        "pwd": influxdb["password"],
+        "db_name": influxdb["database"]
+    }
+    return influxdb_params
 
 
 class GlobalImport:
@@ -124,11 +140,21 @@ class Temp_Humid_Sensor(Pi_Sensor):
     """DHT22 temperature-huditity sensor class. Inherits from Pi_Sensor."""
     def __init__(self, name, pin, **kwargs):
         with GlobalImport() as gi:
-            import Adafruit_DHT
+            import adafruit_dht
+            import board
+            import psutil
             gi()
         super().__init__(name, pin=pin, **kwargs)
         self.channels = ["temperature", "humidity", "dew point"]
         self.units = ["C", "%%", "C"]
+        self.kill_processes()
+        self.device = adafruit_dht.DHT22(getattr(board, "D" + str(self.pin)))
+
+    def kill_processes(self):
+        """Kills processes left open by adafruit_dht library."""
+        for p in psutil.process_iter():
+            if p.name() in ["libgpiod_pulsein", "libgpiod_pulsei"]:
+                p.kill()
 
     def calc_dewpt(self, temp, humid):
         """
@@ -146,8 +172,8 @@ class Temp_Humid_Sensor(Pi_Sensor):
         return dp
 
     def read(self):
-        sensor = Adafruit_DHT.DHT22
-        temp, humid = Adafruit_DHT.read_retry(sensor, self.pin)
+        temp = self.device.temperature
+        humid = self.device.humidity
         dewpoint = self.calc_dewpt(temp, humid)
         self.values = [temp, humid, dewpoint]
 
@@ -340,7 +366,6 @@ class Logger(object):
         """Read data from the sensors and generate a data point dictionary."""
         current_time = str(datetime.datetime.utcnow())
         data_body = dict(measurement="{}".format(self.name), time=current_time, fields={})
-        max_timeout = np.max([sensor.timeout for sensor in self.sensors]) / 1000.
         for sensor in self.sensors:
             sensor.read()
             mask = sensor.filter(sensor.values) if sensor.filter else [True] * len(sensor.channels)
