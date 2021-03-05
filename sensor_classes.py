@@ -8,6 +8,8 @@ import os
 import time
 import numpy as np
 import multiprocessing
+import sys
+import subprocess
 from configparser import ConfigParser
 
 
@@ -23,6 +25,10 @@ def parse_config(config_path):
         "db_name": influxdb["database"]
     }
     return influxdb_params
+
+
+def install(module):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", module])
 
 
 class GlobalImport:
@@ -102,13 +108,11 @@ class Arduino_Sensor(Sensor):
         Expects serial input to be measurement values seperated by commas.
         """
         try:
-            ser = serial.Serial(self.board_port, self.baud, timeout=1)
-            values_raw = ser.readline()
-            self.values = values_raw.decode().split(",")[:-1]
-            ser.close()
+            ser = serial.Serial(self.board_port, self.baud)
+            self.values = [float(value) for value in ser.readline().decode('utf-8').split(",")[:-1]]
         except Exception as err:
-            print(err)
-            ser.close()
+            print("Error reading data from sensor '%s'" % self.name)
+            print(e)
 
 
 
@@ -150,7 +154,7 @@ class Temp_Humid_Sensor(Pi_Sensor):
             import psutil
             gi()
         super().__init__(name, pin=pin, **kwargs)
-        self.channels = ["temperature", "humidity", "dew point"]
+        self.channels = ["temperature", "humidity", "dew_point"]
         self.units = ["C", "%%", "C"]
         self.kill_processes()
         self.device = adafruit_dht.DHT22(getattr(board, "D" + str(self.pin)))
@@ -184,7 +188,7 @@ class Temp_Humid_Sensor(Pi_Sensor):
 
 
 class Magnetometer(Arduino_Sensor):
-    """QMC5883L Magnetometer sensor class. Inherits from Arduino_Sensor."""
+    """LSM303DLHC Magnetometer sensor class. Inherits from Arduino_Sensor."""
     def __init__(self, name, board_port, **kwargs):
         super().__init__(name, board_port, **kwargs)
         self.channels = ["Bx", "By", "Bz"]
@@ -355,17 +359,18 @@ class Logger(object):
 
     def upload(self):
         """Upload the data to the client. If the upload fails, write the data to a backup file."""
-        try:
-            self.client.write_points(self.data)
-        except Exception as err:
-            print("Failed to upload data. Saving data to backup directory.")
-            print(err)
-            os.makedirs(self.backup_dir, exist_ok=True)
-            file_name = "{}-missed.json".format(time.time())
-            backup_path = os.path.join(self.backup_dir, file_name)
-            with open(backup_path, "w") as outfile:
-                json.dump(self.data, outfile)
-        self.data = []
+        if self.data:
+            try:
+                self.client.write_points(self.data)
+            except Exception as e:
+                print("Failed to upload data. Saving data to backup directory.")
+                print(e)
+                os.makedirs(self.backup_dir, exist_ok=True)
+                file_name = "{}-missed.json".format(time.time())
+                backup_path = os.path.join(self.backup_dir, file_name)
+                with open(backup_path, "w") as outfile:
+                    json.dump(self.data, outfile)
+            self.data = []
 
     def generate_body(self):
         """Read data from the sensors and generate a data point dictionary."""
