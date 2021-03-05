@@ -196,7 +196,7 @@ class Magnetometer(Arduino_Sensor):
 
 
 class Gyroscope(Arduino_Sensor):
-    """L3GD20H Magnetometer sensor class. Inherits from Arduino_Sensor."""
+    """L3GD20H Gyroscope sensor class. Inherits from Arduino_Sensor."""
     def __init__(self, name, board_port, **kwargs):
         super().__init__(name, board_port, **kwargs)
         self.channels = ["xrot", "yrot", "zrot"]
