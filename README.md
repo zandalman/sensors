@@ -1,10 +1,10 @@
 # Sensors
 
-A unified sensor code for uploading sensor data from a Raspberry Pi to InfluxDB.
+An object-oriented unified sensor code for uploading sensor data from a Raspberry Pi to InfluxDB. The code supports sensors connected directly to the Raspberry Pi or connected via Arduino and USB port. New sensor types can be added easily.
 
 ## Create a config file
 
-For security reasons, you should use a config file to store sensitive information about your database. The built-in function `parse_config` reads config files structured like this and returns a dictionary.
+For security reasons, you should use a config file to store sensitive information about your database. The built-in function `parse_config` reads config files structured like this and returns a dictionary. The file `config-template.config` provides a template that you can use.
 
     [influxdb]
     url = DATABASE_SERVER_URL
@@ -18,9 +18,11 @@ For security reasons, you should use a config file to store sensitive informatio
 You need to initialize a `Logger` object to connect to the database client. Once you initialize the `Logger` object, you can add `Sensor` objects.
 
 1. Initialize a `Logger` object. The object requires a name as an argument. All sensors associated with the Logger object will appear as seperate fields under this name in InfluxDB.
-2. Call `Logger.connect` to connect to the client. The method requires all of the information in the config file as arguments. Optionally, you can specify a custom directory for writing files if the connection to the client fails using the `backup_dir` keyword argument.
+2. Call `Logger.connect` to connect to the client. The method requires all of the information in the config file as arguments. Optionally, you can specify a custom directory for writing files if the connection to the client fails using the `backup_dir` keyword argument. By default, the logger will write backup files to a folder in the current directory named `backups`.
 3. Initialize the `Sensor` objects. All Arduino-based sensors require the board port as a keyword argument. All Raspberry Pi-based sensors require the GPIO pin as a keyword argument. If you want to print the measurements from a `Sensor` object, pass `print_m=True` as a keyword argument.
 4. Call `Logger.add_sensors` and pass the sensors as arguments to add the sensors to the `Logger` object.
+
+You can find an example of this in `sensors.py`.
 
         logger = Logger(LOGGER_NAME) # step 1
         logger.connect(**parse_config(), backup_dir=PATH_TO_BACKUP_DIRECTORY) # step 2
@@ -33,6 +35,8 @@ You will need to create a loop to collect and upload the data. In each iteration
 
 1. `Logger.generate_body` reads from all sensors and creates a datapoint.
 2. `Logger.upload` uploads all unuploaded data points to the database.
+
+You can find an example of this in `sensors.py`.
 
 ## Recovering backup data
 
@@ -53,7 +57,7 @@ The initialization function in the new class should look like this.
         self.units = [] # units for each sensor channel; must be the same length a self.channels
         # define any other sensor properties
         
-You must define a `read` method which sets `self.values` to a list of measurement values for each channel. Optionally, you can define a filter function which returns a mask in the form of a list. Here is an example sensor class definition.
+You must define a `read` method which sets `self.values` to a list of measurement values for each channel. Optionally, you can define a filter function which returns a mask in the form of a list of Booleans. Here is an example sensor class definition.
 
     class Example_Sensor(Sensor):
         """Class for testing and debugging sensor code. Inherits from Sensor class."""
@@ -62,28 +66,76 @@ You must define a `read` method which sets `self.values` to a list of measuremen
                 import random
                 gi()
             super().__init__(name, **kwargs)
-            self.channels = ["measurement1", "measurement2"]
-            self.units = ["units", "units"]
+            self.channels = ["distance", "time"]
+            self.units = ["m", "s"]
 
         def read(self):
             self.values = [random.random(), random.random()]
             
         def filter(self)
-            return [x > 0 for x in self.values]
+            distance, time = self.values
+            return [distance > 0, time > 0]
 
-Raspberry Pi-based sensors include an additional argument `pin` for the GPIO pin on the Raspberry-Pi. Arduino-based sensors include an additional argument `board_port` and an additional keyword argument `baud` for the Arduino board port and baud rate respectively. The read function is predefined for Arduino-based sensors. The function assumes that the measurements are communicated over serial and seperated by commas.
+Raspberry Pi-based sensors include an additional argument `pin` for the GPIO pin on the Raspberry Pi. Arduino-based sensors include an additional argument `board_port` and an additional keyword argument `baud` for the Arduino board port and baud rate respectively. The read function is predefined for Arduino-based sensors. The function assumes that the measurements are communicated over serial and seperated by commas.
 
 ## Currently supported sensors
 
-### Respberry-Pi sensors
+Sensors are listed by their part number with their object name in `sensor_classes.py` in parenthesis.
 
-#### DHT22
+### Arduino sensors (Arduino_Sensor)
+
+All Arduino sensors have a built-in read function which uses the "serial" library. The built-in read function requires the input values to be sent over serial as a byte string separated by commas with each timestep on a new line. In Arduino code, this can be accomplished using the following function
+
+    int NUM_MEASUREMENTS = 2;
+    int DELAY = 250;
+    
+    void loop(void) {
+      measurement1 = ;// Insert code
+      measurement2 = ;// Insert code
+      double values[] = {measurement1, measurement2};
+      printall(values);
+      Serial.println("");
+      delay(DELAY);
+    }
+    
+    void printall(double values[]) {
+      for (int i = 0; i <= NUM_MEASUREMENTS; i++) {
+        Serial.print(values[i]);
+        Serial.print(",");
+      }
+    }
+
+#### LSM303DLHC (Magnetometer)
+
+The LSM303DLHC is a magnetometer sensor from Adafruit. It determines the ambient magnetic field along all 3 axes in uG.
+
+#### L3GD20H (Gyroscope)
+
+The L3GD20H is a gyroscope sensor from Adafruit. It determines the angular velocity along all 3 axes in rad/s.
+
+#### ADXL345 (Accelerometer)
+
+The ADXL345 is an accelerometer sensor from Adafruit. It determines the linear acceleration along all 3 axes in m/s^2.
+
+### Raspberry Pi sensors (Pi_Sensor)
+
+#### DHT22 (Temp_Humid_Sensor)
 
 The DHT22 is a temperature-humidity sensor from Adafruit. It uses the `adafruit_dht`, `board`, and `psutil` python libraries. You may also need to install `libgpiod2`.
 
-        pip install adafruit-circuitpython-dht
-        pip install board
-        pip install psutil
-        sudo apt install libgpiod2
+    pip install adafruit-circuitpython-dht
+    pip install board
+    pip install psutil
+    sudo apt install libgpiod2
 
-There is a glitch where the `adafruit_dht` library leaves background processes running that interfere with connecting to the DHT22 multiple times. This glitch is resolved using the `kill_processes` method of the DHT22 sensor class. The sensor class automatically calculates an approximation for the dew point from the temperature and humidity.
+There is a glitch caused by the `adafruit_dht` library which leaves background processes running that interfere with connecting to the DHT22 multiple times. This glitch is resolved using the `kill_processes` method of the DHT22 sensor class. The sensor class includes a method `calc_dew_pt` which automatically calculates an approximation for the dew point from the temperature and humidity.
+
+### Other sensors
+
+#### Laser power
+
+In progress.
+
+#### Thermocouple
+
+In progress
