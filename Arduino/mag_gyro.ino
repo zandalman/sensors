@@ -4,7 +4,7 @@
 #include <Wire.h>
 
 int NUM_MEASUREMENTS = 6;
-int DELAY = 250;
+int DELAY = 500;
 
 Adafruit_LSM303DLH_Mag_Unified mag = Adafruit_LSM303DLH_Mag_Unified(12345);
 Adafruit_L3GD20_Unified gyro = Adafruit_L3GD20_Unified(20);
@@ -13,9 +13,12 @@ void setup(void) {
   Serial.begin(9600);
   mag.enableAutoRange(true);
   gyro.enableAutoRange(true);
-  // Initialise the sensor
+  // Print error
   if (!mag.begin()) {
-    Serial.println("Error");
+    Serial.println("Magnetometer error");
+    while (1);
+  } else if (!gyro.begin()) {
+    Serial.println("Gyroscope error");
     while (1);
   }
 }
