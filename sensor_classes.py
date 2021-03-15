@@ -7,9 +7,9 @@ import json
 import os
 import time
 import numpy as np
-import multiprocessing
 import sys
 import subprocess
+import logging
 from configparser import ConfigParser
 
 
