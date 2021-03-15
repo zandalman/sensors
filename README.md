@@ -84,7 +84,7 @@ Sensors are listed by their part number with their object name in `sensor_classe
 
 ### Arduino sensors (Arduino_Sensor)
 
-All Arduino sensors have a built-in read function which uses the "serial" library. The built-in read function requires the input values to be sent over serial as a byte string separated by commas with each timestep on a new line. In Arduino code, this can be accomplished using the following function
+All Arduino sensors have a built-in read function which uses the "serial" library. The built-in read function requires the input values to be sent over serial as a byte string separated by commas with each timestep on a new line. For example
 
     int NUM_MEASUREMENTS = 2;
     int DELAY = 250;
@@ -104,6 +104,14 @@ All Arduino sensors have a built-in read function which uses the "serial" librar
         Serial.print(",");
       }
     }
+    
+For all Arduino sensors, you must specify the board port and baud rate on initialization using the keyword arguments `board_port` and `baud`. To find the board port on the Raspberry Pi
+
+1. Run `ls /dev/tty*`
+2. Find the result that is not one of the following:
+    a. `/dev/ttyN` where `N` is an integer from 0 to 63
+    b. `/dev/ttyAMA0`
+    c. `/dev/ttyprintk`
 
 #### LSM303DLHC (Magnetometer)
 
@@ -118,6 +126,8 @@ The L3GD20H is a gyroscope sensor from Adafruit. It determines the angular veloc
 The ADXL345 is an accelerometer sensor from Adafruit. It determines the linear acceleration along all 3 axes in m/s^2.
 
 ### Raspberry Pi sensors (Pi_Sensor)
+
+For all Raspberry Pi sensors, you must specify the GPIO pin number on initialization using the keyword argument `pin`. Remember to use the GPIO pin number rather than the actual pin number (i.e. pin 8 is GPIO pin 14).
 
 #### DHT22 (Temp_Humid_Sensor)
 
