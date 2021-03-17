@@ -104,9 +104,7 @@ class Arduino_Sensor(Sensor):
         self.baud = baud
 
     def read(self):
-        """
-        Expects serial input to be measurement values seperated by commas.
-        """
+        """Expects serial input to be measurement values separated by commas."""
         try:
             ser = serial.Serial(self.board_port, self.baud)
             self.values = [float(value) for value in ser.readline().decode('utf-8').split(",")[:-1]]
@@ -147,7 +145,7 @@ class Test_Sensor(Sensor):
 
 class Temp_Humid_Sensor(Pi_Sensor):
     """DHT22 temperature-huditity sensor class. Inherits from Pi_Sensor."""
-    def __init__(self, name, pin, **kwargs):
+    def __init__(self, name, pin, first=False, **kwargs):
         with GlobalImport() as gi:
             import adafruit_dht
             import board
@@ -155,8 +153,9 @@ class Temp_Humid_Sensor(Pi_Sensor):
             gi()
         super().__init__(name, pin=pin, **kwargs)
         self.channels = ["temperature", "humidity", "dew_point"]
-        self.units = ["C", "%%", "C"]
-        self.kill_processes()
+        self.units = ["C", "%", "%"]
+        if first:
+            self.kill_processes()
         self.device = adafruit_dht.DHT22(getattr(board, "D" + str(self.pin)))
 
     def kill_processes(self):
