@@ -81,6 +81,13 @@ You must define a `read` method which sets `self.values` to a list of measuremen
 
 Raspberry Pi-based sensors include an additional argument `pin` for the GPIO pin on the Raspberry Pi. Arduino-based sensors include an additional argument `board_port` and an additional keyword argument `baud` for the Arduino board port and baud rate respectively. The read function is predefined for Arduino-based sensors. The function assumes that the measurements are communicated over serial and seperated by commas.
 
+## Setting up cron on Raspberry Pi
+
+Cron is a tool for configuring scheduled tasks in Unix systems. Using cron, you can set the sensor code to run every time the Raspberry Pi reboots.
+
+1. Run `crontab -e` in the command line on the Raspberry Pi. If you are prompted to choose an editor, choose the editor of your choice (e.g. nano).
+2. In the cron file, add the line `@reboot python /home/pi/myscript.py &`.
+
 ## Currently supported sensors
 
 Sensors are listed by their part number with their object name in `sensor_classes.py` in parenthesis.
