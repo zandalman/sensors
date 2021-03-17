@@ -159,3 +159,7 @@ In progress.
 #### Thermocouple
 
 In progress
+
+## Planned Features
+
+1. Automatic error logging using the python `logger` library.
