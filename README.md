@@ -70,13 +70,23 @@ You must define a `read` method which sets `self.values` to a list of measuremen
             self.units = ["m", "s"]
 
         def read(self):
-            self.values = [random.random(), random.random()]
+            distance = random.random()
+            time = random.random()
+            speed = distance / time
+            self.values = [distance, time, speed]
             
         def filter(self)
-            distance, time = self.values
-            return [distance > 0, time > 0]
+            distance, time, speed = self.values
+            return [distance > 0, time > 0, speed > 0]
 
 Raspberry Pi-based sensors include an additional argument `pin` for the GPIO pin on the Raspberry Pi. Arduino-based sensors include an additional argument `board_port` and an additional keyword argument `baud` for the Arduino board port and baud rate respectively. The read function is predefined for Arduino-based sensors. The function assumes that the measurements are communicated over serial and seperated by commas.
+
+## Setting up cron on Raspberry Pi
+
+Cron is a tool for configuring scheduled tasks in Unix systems. Using cron, you can set the sensor code to run every time the Raspberry Pi reboots.
+
+1. Run `crontab -e` in the command line on the Raspberry Pi. If you are prompted to choose an editor, choose the editor of your choice (e.g. nano).
+2. In the cron file, add the line `@reboot python /home/pi/myscript.py &`.
 
 ## Currently supported sensors
 
@@ -138,7 +148,7 @@ The DHT22 is a temperature-humidity sensor from Adafruit. It uses the `adafruit_
     pip install psutil
     sudo apt install libgpiod2
 
-There is a glitch caused by the `adafruit_dht` library which leaves background processes running that interfere with connecting to the DHT22 multiple times. This glitch is resolved using the `kill_processes` method of the DHT22 sensor class. The sensor class includes a method `calc_dew_pt` which automatically calculates an approximation for the dew point from the temperature and humidity.
+There is a glitch caused by the `adafruit_dht` library which leaves background processes running that interfere with connecting to the DHT22 multiple times. To resolve this glitch, you must initialize the first DHT22 sensor only with the keyword argument `first=True`. This will cause the `kill_processes` method to run. The sensor class includes a method `calc_dew_pt` which automatically calculates an approximation for the dew point from the temperature and humidity.
 
 ### Other sensors
 
@@ -149,3 +159,7 @@ In progress.
 #### Thermocouple
 
 In progress
+
+## Planned Features
+
+1. Automatic error logging using the python `logger` library.
