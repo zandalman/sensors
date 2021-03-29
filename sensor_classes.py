@@ -186,6 +186,14 @@ class Temp_Humid_Sensor(Pi_Sensor):
         self.values = [temp, humid, dewpoint]
 
 
+class Peak_Time_Logger(Arduino_Sensor):
+    """Peak time logger sensor class. Inherits from Arduino_Sensor"""
+    def __init__(self, name, board_port, **kwargs):
+        super().__init__(name, board_port, **kwargs)
+        self.channels = ["V"]
+        self.units = ["us"]
+
+
 class Magnetometer(Arduino_Sensor):
     """LSM303DLHC Magnetometer sensor class. Inherits from Arduino_Sensor."""
     def __init__(self, name, board_port, **kwargs):

@@ -106,7 +106,7 @@ class Picoscope():
 
     def get_data(self):
         max_ADC = ctypes.c_int16()
-        self.status["maximumValue"] = ps.ps2000aMaximumValue(self.chandle, ctypes.byref(maxADC))
+        self.status["maximumValue"] = ps.ps2000aMaximumValue(self.chandle, ctypes.byref(max_ADC))
         assert_pico_ok(self.status["maximumValue"])
         data = {}
         total_samples = self.buffer_settings["size"] * self.buffer_settings["num"]
