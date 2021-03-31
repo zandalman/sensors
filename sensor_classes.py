@@ -81,7 +81,7 @@ class Sensor(object):
         """Print error."""
         if self.print_m:
             error_class = e.__class__.__name__
-            print("On sensor '%s' read: %s: '%s.'" % (self.name, error_class, e))
+            print("On sensor '%s' error: %s: '%s.'" % (self.name, error_class, e))
 
 class Arduino_Sensor(Sensor):
     """
@@ -110,7 +110,7 @@ class Arduino_Sensor(Sensor):
             self.values = [float(value) for value in ser.readline().decode('utf-8').split(",")[:-1]]
         except Exception as err:
             print("Error reading data from sensor '%s'" % self.name)
-            print(e)
+            print(err)
 
 
 
@@ -363,6 +363,18 @@ class Logger(object):
         except Exception as err:
             print("Failed to connect to database.")
             print(err)
+
+    def upload_custom(self, data):
+        try:
+            self.client.write_points(self.data)
+        except Exception as e:
+            print("Failed to upload data. Saving data to backup directory.")
+            print(e)
+            os.makedirs(self.backup_dir, exist_ok=True)
+            file_name = "{}-missed.json".format(time.time())
+            backup_path = os.path.join(self.backup_dir, file_name)
+            with open(backup_path, "w") as outfile:
+                json.dump(self.data, outfile)
 
     def upload(self):
         """Upload the data to the client. If the upload fails, write the data to a backup file."""

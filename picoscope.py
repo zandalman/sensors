@@ -4,10 +4,35 @@ from picosdk.ps2000a import ps2000a as ps
 import matplotlib.pyplot as plt
 from picosdk.functions import adc2mV, assert_pico_ok
 import time
+import datetime
 
 
 class Channel():
+    """
+    Picoscope channel object.
 
+    For coupling and range options, see https://www.picotech.com/download/manuals/picoscope-2000-series-programmers-guide.pdf
+
+    Args:
+        chandle: C handle from Picoscope object
+        alias (string): Channel alias
+        letter (string): Channel letter. Either "A", "B", "C", or "D"
+        enabled (bool): Enable channel.
+        coupling (string): Channel coupling
+        range (string): Channel range
+        offset (float): Channel offset
+
+    Attrs:
+        chandle: C handle from Picoscope object
+        alias (string): Channel alias
+        letter (string): Channel letter. Either "A", "B", "C", or "D"
+        enabled (bool): Enable channel.
+        coupling (string): Channel coupling
+        range (string): Channel range
+        offset (float): Channel offset
+        buffer (list): Channel buffer
+        buffer_complete (list): Complete channel buffer
+    """
     def __init__(self, chandle, alias, letter="A", enabled=True, coupling="PS2000A_DC", range="PS2000A_2V", offset=0):
         self.chandle = chandle
         self.alias = alias
@@ -21,9 +46,26 @@ class Channel():
         self.buffer_complete = None
 
     def setup(self):
+        """
+        Setup channel.
+
+        Returns:
+            Channel setup status
+        """
         return ps.ps2000aSetChannel(self.chandle, self.channel, self.enabled, self.coupling, self.range, self.offset)
 
     def create_buffer(self, size, num, ratio_mode):
+        """
+        Create channel buffer.
+
+        Args:
+            size (int): Size of a single buffer
+            num (int): Number of buffers to capture
+            ratio_mode (string): Buffer ratio mode
+
+        Returns:
+            Buffer setup status
+        """
         self.buffer = np.zeros(shape=size, dtype=np.int16)
         self.buffer_complete = np.zeros(shape=size * num, dtype=np.int16)
         return ps.ps2000aSetDataBuffers(self.chandle,
@@ -36,7 +78,18 @@ class Channel():
 
 
 class Streamer():
+    """
+    Picoscope streamer object.
 
+    Args:
+        channels (dict): Dictionary of channel aliases and channel objects
+
+    Attrs:
+        channels (dict): Dictionary of channel aliases and channel objects
+        next (int): Number of next sample
+        auto_stop (bool): Auto stop streaming
+        called_back (bool): Picoscope streamer was already called back
+    """
     def __init__(self, channels):
         self.channels = channels
         self.next = 0
@@ -44,6 +97,7 @@ class Streamer():
         self.called_back = False
 
     def callback(self, handle, num_samples, start_idx, overflow, trigger_at, triggered, auto_stop, param):
+        """Streamer callback function."""
         self.called_back = True
         dest_end = self.next + num_samples
         source_end = start_idx + num_samples
@@ -55,20 +109,36 @@ class Streamer():
 
 
 class Picoscope():
+    """
+    Picoscope object.
 
+    Attrs:
+        chandle: C handle
+        status (dict): Dictionary of picoscope status objects
+        channels (dict): Dictionary of channel aliases and channel objects
+        buffer_settings (dict): Dictionary of buffer settings
+        sample_interval (float): Sample interval
+    """
     def __init__(self):
-        # create chandle and status ready for use
         self.chandle = ctypes.c_int16()
         self.status = {}
-        # open picoscope device
         self.status["openunit"] = ps.ps2000aOpenUnit(ctypes.byref(self.chandle), None)
         assert_pico_ok(self.status["openunit"])
         self.channels = {}
         self.buffer_settings = {}
-        self.streamer = None
         self.sample_interval = 0
+        self.stream_start = datetime.datetime.utcnow()
+        self.raw_data = {}
+        self.data = []
 
     def setup_channel(self, alias, **kwargs):
+        """
+        Setup channel
+
+        Args:
+            alias (string): Channel alias
+            **kwargs: Channel object arguments
+        """
         channel = Channel(self.chandle, alias, **kwargs)
         self.channels[alias] = channel
         channel_setup_name = "setCh" + channel.letter
@@ -76,6 +146,16 @@ class Picoscope():
         assert_pico_ok(self.status[channel_setup_name])
 
     def setup_buffer(self, size=500, num=10, ratio_mode="PS2000A_RATIO_MODE_NONE"):
+        """
+        Setup buffer for all channels.
+
+        For ratio mode options, see https://www.picotech.com/download/manuals/picoscope-2000-series-programmers-guide.pdf
+
+        Args:
+            size (int): Size of a single buffer
+            num (int): Number of buffers to capture
+            ratio_mode (string): Buffer ratio mode
+        """
         self.buffer_settings = dict(size=size, num=num, ratio_mode=ratio_mode)
         for channel in self.channels.values():
             channel_buffer_name = "setDataBuffers" + channel.letter
@@ -83,9 +163,19 @@ class Picoscope():
             assert_pico_ok(self.status[channel_buffer_name])
 
     def setup_stream(self, sample_interval=250, sample_units="PS2000A_US", downsample_ratio=1):
-        self.sample_interval = sample_interval
+        """
+        Setup streaming.
+
+        For sample_units options, see https://www.picotech.com/download/manuals/picoscope-2000-series-programmers-guide.pdf
+
+        Args:
+            sample_interval (int): Sample interval
+            sample_units (string): Sample units
+            downsample_ratio (int): Downsample ratio
+        """
+        self.sample_interval = ctypes.c_int32(sample_interval)
         self.status["runStreaming"] = ps.ps2000aRunStreaming(self.chandle,
-                                                             ctypes.c_int32(sample_interval),
+                                                             ctypes.byref(self.sample_interval),
                                                              ps.PS2000A_TIME_UNITS[sample_units],
                                                              0,
                                                              self.buffer_settings["size"] * self.buffer_settings["num"],
@@ -96,43 +186,44 @@ class Picoscope():
         assert_pico_ok(self.status["runStreaming"])
 
     def stream(self):
+        """Stream data."""
         streamer = Streamer(self.channels)
         cfunc_pointer = ps.StreamingReadyType(streamer.callback)
+        self.stream_start = datetime.datetime.utcnow()
         while streamer.next < self.buffer_settings["size"] * self.buffer_settings["num"] and not streamer.auto_stop:
             streamer.called_back = False
             self.status["getStreamingLastestValues"] = ps.ps2000aGetStreamingLatestValues(self.chandle, cfunc_pointer, None)
             if not streamer.called_back:
                 time.sleep(0.01)
 
-    def get_data(self):
+    def process_data(self):
+        """Process data"""
+        total_samples = self.buffer_settings["size"] * self.buffer_settings["num"]
+        for i in range(total_samples):
+            measurement_time = str(self.stream_start + datetime.timedelta(microseconds=self.raw_data["time"][i]))
+            data_body = dict(measurement="{}".format("picoscope"), time=measurement_time, fields={})
+            for channel_name in self.channels.keys():
+                data_body["fields"][channel_name] = self.raw_data[channel_name][i]
+            self.data.append(data_body)
+
+    def generate_body(self):
+        """Retrieve data."""
         max_ADC = ctypes.c_int16()
         self.status["maximumValue"] = ps.ps2000aMaximumValue(self.chandle, ctypes.byref(max_ADC))
         assert_pico_ok(self.status["maximumValue"])
-        data = {}
         total_samples = self.buffer_settings["size"] * self.buffer_settings["num"]
-        data["time"] = np.linspace(0, total_samples * ctypes.c_int32(self.sample_interval).value * 1000, total_samples)
+        self.raw_data["time"] = np.linspace(0, total_samples * self.sample_interval.value, total_samples)
         for alias, channel in self.channels.items():
-            data[alias] = adc2mV(channel.buffer_complete, channel.range, max_ADC)
-        return data
+            self.raw_data[alias] = adc2mV(channel.buffer_complete, channel.range, max_ADC)
+        self.process_data()
 
     def stop(self):
+        """Stop picoscope."""
         self.status["stop"] = ps.ps2000aStop(self.chandle)
         assert_pico_ok(self.status["stop"])
         self.status["close"] = ps.ps2000aCloseUnit(self.chandle)
         assert_pico_ok(self.status["close"])
 
     def print_status(self):
+        """Print picoscope status."""
         print(self.status)
-
-
-if __name__ == "main":
-    pico = Picoscope()
-    pico.setup_channel("ch1", letter="A")
-    pico.setup_channel("ch2", letter="B")
-    pico.setup_buffer()
-    pico.setup_stream()
-    pico.stream()
-    data = pico.get_data()
-    pico.stop()
-    pico.print_status()
-    print(data)
