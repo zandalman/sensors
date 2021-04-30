@@ -24,10 +24,10 @@ You need to initialize a `Logger` object to connect to the database client. Once
 
 You can find an example of this in `sensors.py`.
 
-        logger = Logger(LOGGER_NAME) # step 1
-        logger.connect(**parse_config(), backup_dir=PATH_TO_BACKUP_DIRECTORY) # step 2
-        sensor = Test_Sensor(SENSOR_NAME, print_m=True) # step 3
-        logger.add_sensors(sensor) # step 4
+    logger = Logger(LOGGER_NAME) # step 1
+    logger.connect(**parse_config(), backup_dir=PATH_TO_BACKUP_DIRECTORY) # step 2
+    sensor = Test_Sensor(SENSOR_NAME, print_m=True) # step 3
+    logger.add_sensors(sensor) # step 4
 
 ## Data collection
 
@@ -86,7 +86,7 @@ Raspberry Pi-based sensors include an additional argument `pin` for the GPIO pin
 Cron is a tool for configuring scheduled tasks in Unix systems. Using cron, you can set the sensor code to run every time the Raspberry Pi reboots.
 
 1. Run `crontab -e` in the command line on the Raspberry Pi. If you are prompted to choose an editor, choose the editor of your choice (e.g. nano).
-2. In the cron file, add the line `@reboot python /home/pi/myscript.py &`.
+2. In the cron file, add the line `@reboot python PATH_TO_SENSORS_FOLDER/sensors.py &`.
 
 ## Currently supported sensors
 
@@ -119,9 +119,9 @@ For all Arduino sensors, you must specify the board port and baud rate on initia
 
 1. Run `ls /dev/tty*`
 2. Find the result that is not one of the following:
-    a. `/dev/ttyN` where `N` is an integer from 0 to 63
-    b. `/dev/ttyAMA0`
-    c. `/dev/ttyprintk`
+    1. `/dev/ttyN` where `N` is an integer from 0 to 63
+    2. `/dev/ttyAMA0`
+    3. `/dev/ttyprintk`
 
 #### LSM303DLHC (Magnetometer)
 
@@ -152,9 +152,37 @@ There is a glitch caused by the `adafruit_dht` library which leaves background p
 
 ### Other sensors
 
-#### Laser power
+#### Picoscope 2000 Series
 
-In progress.
+Picoscope is a high-precision oscilloscope. To read data from the picoscope, you will need to install the correct version of the Picoscope driver for your Picoscope from the [Picoscope downloads page](https://www.picotech.com/downloads). Our code uses an existing GitHub repository [Picoscope Python drivers](https://github.com/picotech/picosdk-python-wrappers). The Picoscope works differently from the other sensors so the Picoscope object is contained in a seperate file `Picoscope.py`. To integrate a Picoscope object into the sensor code
+
+1. Initialize a Picoscope object.
+2. Create a try-finally clause. In the finally block, stop the Picoscope. If you skip this step, you will not be able to start and stop reading data freely. Do the remainder of the steps in the try block.
+3. Set up the Picoscope channels.
+4. Create a loop to collect data. In each iteration of the loop
+    1. Set up the Picoscope buffer.
+    2. Set up the Picoscope streamer.
+    3. Start the stream.
+    4. Generate the data body to send to InfluxDB.
+    5. Upload the data body.
+
+You can find an example of this in `sensors_picoscope.py`. More information about the options available for the Picoscope can be found [here](https://www.picotech.com/download/manuals/picoscope-2000-series-programmers-guide.pdf).
+
+```
+    pico = Picoscope("picoscope") # step 1
+    try:
+        pico.setup_channel("red laser power", letter="A") # step 3
+        pico.setup_channel("blue laser power", letter="B")
+    while True:
+        pico.setup_buffer(size=1, num=1) # step 4.1
+        pico.setup_stream(sample_interval=250, downsample_ratio=1) # step 4.2
+        pico.stream() # step 4.3
+        pico.generate_body() # step 4.4
+        pico.print_status() # optional, but useful for debugging
+        logger.upload_custom(pico.data) # step 4.5
+    finally:
+        pico.stop() # step 2
+ ```
 
 #### Thermocouple
 
