@@ -375,7 +375,7 @@ class Logger(object):
             file_name = "{}-missed.json".format(time.time())
             backup_path = os.path.join(self.backup_dir, file_name)
             with open(backup_path, "w") as outfile:
-                json.dump(self.data, outfile)
+                json.dump(data, outfile)
 
     def upload(self):
         """Upload the data to the client. If the upload fails, write the data to a backup file."""
