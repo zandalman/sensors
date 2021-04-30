@@ -365,8 +365,9 @@ class Logger(object):
             print(err)
 
     def upload_custom(self, data):
+        """Upload custom data to the client."""
         try:
-            self.client.write_points(self.data)
+            self.client.write_points(data)
         except Exception as e:
             print("Failed to upload data. Saving data to backup directory.")
             print(e)

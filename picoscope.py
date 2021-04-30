@@ -112,14 +112,18 @@ class Picoscope():
     """
     Picoscope object.
 
+    Args:
+        name (str): A name to associate with the picoscope
+
     Attrs:
+        name: A name to associate with the picoscope
         chandle: C handle
         status (dict): Dictionary of picoscope status objects
         channels (dict): Dictionary of channel aliases and channel objects
         buffer_settings (dict): Dictionary of buffer settings
         sample_interval (float): Sample interval
     """
-    def __init__(self):
+    def __init__(self, name):
         self.chandle = ctypes.c_int16()
         self.status = {}
         self.status["openunit"] = ps.ps2000aOpenUnit(ctypes.byref(self.chandle), None)
@@ -130,6 +134,7 @@ class Picoscope():
         self.stream_start = datetime.datetime.utcnow()
         self.raw_data = {}
         self.data = []
+        self.name = name
 
     def setup_channel(self, alias, **kwargs):
         """
@@ -201,7 +206,7 @@ class Picoscope():
         total_samples = self.buffer_settings["size"] * self.buffer_settings["num"]
         for i in range(total_samples):
             measurement_time = str(self.stream_start + datetime.timedelta(microseconds=self.raw_data["time"][i]))
-            data_body = dict(measurement="{}".format("picoscope"), time=measurement_time, fields={})
+            data_body = dict(measurement=self.name, time=measurement_time, fields={})
             for channel_name in self.channels.keys():
                 data_body["fields"][channel_name] = self.raw_data[channel_name][i]
             self.data.append(data_body)

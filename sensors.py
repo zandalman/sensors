@@ -8,5 +8,6 @@ if __name__ == "__main__":
     logger.add_sensors(sensors)
     while True:
         logger.generate_body()
-        logger.upload()
+        print(logger.data)
+        #logger.upload_custom(logger.data)
         time.sleep(1)
