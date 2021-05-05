@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding:utf-8 -*-
-
 from influxdb import InfluxDBClient
 import datetime
 import json
@@ -218,25 +215,6 @@ class Accelerometer(Arduino_Sensor):
         self.units = ["m/s^2"]
 
 
-class LaserPower(Sensor):
-    """Laser power sensor class. Inherits from Sensor."""
-    def __init__(self, name, **kwargs):
-        with GlobalImport() as gi:
-            import visa
-            from ThorlabsPM100 import ThorlabsPM100
-            gi()
-        super().__init__(name, **kwargs)
-        self.measurements = {"power": []}
-        self.units = ["W"]
-
-    def read(self):
-        rm = visa.ResourceManager()
-        sensor = rm.list_resources()[0]
-        inst = rm.open_resource(sensor)
-        power_meter = ThorlabsPM100.ThorlabsPM100(inst=inst)
-        return [power_meter.read]
-
-
 class Thermocouple(Sensor):
     """
     Thermocouple sensor.
@@ -298,11 +276,8 @@ class MOTBox(Arduino_Sensor):
     """MOT box sensor class. Inherits from Arduino_Sensor."""
     def __init__(self, name, board_port, **kwargs):
         super().__init__(name, board_port, **kwargs)
-        self.channels = ["IntTemp1", "IntTemp2", "ThermoTemp1", "ThermoTemp2", "Flow"]
-        self.units = ["C", "C", "C", "C", "V"]
-
-    def filter(self, values):
-        return [0 < value < 500 for value in values]
+        self.channels = ["TC%d" % (n + 1) for n in range(6)] + ["TC%dint" % (n + 1) for n in range(6)] + ["flow", "current"]
+        self.units = ["C"] * 12 + ["V", "mA"]
 
 
 class Logger(object):
