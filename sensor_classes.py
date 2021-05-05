@@ -277,7 +277,7 @@ class MOTBox(Arduino_Sensor):
     def __init__(self, name, board_port, **kwargs):
         super().__init__(name, board_port, **kwargs)
         self.channels = ["TC%d" % (n + 1) for n in range(6)] + ["TC%dint" % (n + 1) for n in range(6)] + ["flow", "current"]
-        self.units = ["C"] * 12 + ["V", "mA"]
+        self.units = ["C"] * 12 + ["mL/s", "A"]
 
 
 class Logger(object):
